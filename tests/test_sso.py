@@ -1,8 +1,8 @@
 import httpx
 import pytest
 
-from app import sso
-from app.config import settings
+from app.core.config import settings
+from app.modules.identity import api as identity_api
 from tests.fake_idp import CLIENT_ID, CLIENT_SECRET, Idp
 
 
@@ -13,10 +13,10 @@ def idp(monkeypatch):
     monkeypatch.setattr(settings, "oidc_client_id", CLIENT_ID)
     monkeypatch.setattr(settings, "oidc_client_secret", CLIENT_SECRET)
     monkeypatch.setattr(settings, "public_base_url", "http://testserver")
-    sso._oauth = None
+    identity_api._oauth = None
     yield i
     i.stop()
-    sso._oauth = None
+    identity_api._oauth = None
 
 
 def sso_login(client, idp):

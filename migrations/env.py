@@ -1,8 +1,8 @@
 from alembic import context
 from sqlalchemy import create_engine
 
-from app import db
-from app.config import settings
+from app.core import db
+from app.core.config import settings
 
 target_metadata = db.metadata
 

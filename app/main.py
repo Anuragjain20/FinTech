@@ -11,13 +11,14 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import insert, text
 from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, billing, db, observability, sso
-from .brs.router import router as brs_router
-from .config import settings
-from .contracts.router import router as contracts_router
-from .esign.router import router as esign_router
-from .invoice.router import router as invoice_router
-from .rag.router import router as rag_router
+from app.core import auth, billing, db, observability
+from app.core.config import settings
+from app.modules.contracts.api import router as contracts_router
+from app.modules.esign.api import router as esign_router
+from app.modules.identity import api as identity_api
+from app.modules.invoices.api import router as invoice_router
+from app.modules.legal.api import router as rag_router
+from app.modules.reconciliation.api import router as brs_router
 
 app = FastAPI(title="FinTech Suite", version="0.2.0",
               description="Invoice automation, bank reconciliation and contract drafting for Indian SMBs")
@@ -115,7 +116,7 @@ app.include_router(contracts_router)
 app.include_router(esign_router)
 app.include_router(rag_router)
 app.include_router(billing.router)
-app.include_router(sso.router)
+app.include_router(identity_api.router)
 
 _dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 if _dist.is_dir():

@@ -3,9 +3,9 @@ import re
 import numpy as np
 import pytest
 
-from app import billing
-from app.config import settings
-from app.rag import chunking, embed, ingest, llm, review, store
+from app.core import billing
+from app.core.config import settings
+from app.modules.legal import chunking, embed, ingest, llm, review, store
 from tests.fake_llm import FakeLLM
 
 # SYNTHETIC test corpus - NOT real law. It only exercises the pipeline.

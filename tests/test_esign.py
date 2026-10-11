@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from pyhanko.pdf_utils.reader import PdfFileReader
 
-from app import billing, db, storage
-from app.esign import mailer, seal
+from app.core import billing, db, storage
+from app.modules.esign import mailer, seal
 from tests.test_contracts import NDA
 
 

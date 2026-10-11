@@ -53,7 +53,7 @@ In `FINTECH_ENV=production` the app refuses to start with the default admin toke
 **Legal review (RAG).** Contract clauses are matched against a corpus (hybrid BM25 + optional dense embeddings) and, if an LLM is configured, analysed using *only* the retrieved passages. Every reported issue must cite a retrieved passage and shows its quote; findings with missing or unretrieved citations are dropped. Without an LLM it degrades to rule findings + relevant provisions. **No statute text ships with this repo**; load official texts yourself:
 
 ```bash
-python -m app.rag.ingest ./contract_act.txt --source "Indian Contract Act, 1872"      # shared corpus
+python -m app.modules.legal.ingest ./contract_act.txt --source "Indian Contract Act, 1872"      # shared corpus
 # or: POST /legal/corpus (X-Admin-Token); tenants add private playbooks via /legal/documents or the Admin tab
 ```
 

@@ -3,9 +3,9 @@ import os
 import pytest
 from fastapi.testclient import TestClient
 
-from app import db
-from app.config import settings
-from app.invoice.gst import checksum_char
+from app.core import db
+from app.core.config import settings
+from app.modules.invoices.gst import checksum_char
 
 
 def make_gstin(state: str, pan: str, entity: str = "1") -> str:

@@ -59,3 +59,34 @@ ignore = ["E501", "B007", "S101", "S608", "B008", "E701", "E702", "E731", "S105"
 "tests/*" = ["S", "E501", "B"]
 "app/contracts/templates.py" = ["E501"]
 "app/contracts/risk.py" = ["E501"]
+
+# ---- architecture rules (enforced in CI: `lint-imports`) -------------------------------------------
+[tool.importlinter]
+root_package = "app"
+include_external_packages = false
+
+[[tool.importlinter.contracts]]
+name = "Layers: composition roots > modules > ai > core"
+type = "layers"
+layers = ["app.main | app.worker", "app.modules", "app.ai", "app.core"]
+
+[[tool.importlinter.contracts]]
+name = "Feature modules are independent (talk only through declared public APIs)"
+type = "independence"
+modules = [
+  "app.modules.identity", "app.modules.invoices", "app.modules.reconciliation",
+  "app.modules.contracts", "app.modules.esign", "app.modules.legal",
+]
+ignore_imports = [
+  "app.modules.esign.* -> app.modules.contracts.public",
+  "app.modules.legal.* -> app.modules.contracts.public",
+]
+
+[[tool.importlinter.contracts]]
+name = "Only contracts.public is importable from other modules"
+type = "forbidden"
+source_modules = ["app.modules.esign", "app.modules.legal"]
+forbidden_modules = [
+  "app.modules.contracts.api", "app.modules.contracts.risk", "app.modules.contracts.templates",
+  "app.modules.contracts.compare", "app.modules.contracts.docx_export",
+]

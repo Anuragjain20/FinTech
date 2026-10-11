@@ -7,9 +7,9 @@ from email.message import EmailMessage
 import pytest
 from moto import mock_aws
 
-from app import billing, storage
-from app.config import Settings, settings
-from app.invoice import mailbox
+from app.core import billing, storage
+from app.core.config import Settings, settings
+from app.modules.invoices import mailbox
 from tests.conftest import BUYER_SAME, SUPPLIER
 from tests.test_invoice import INVOICE_TEXT
 

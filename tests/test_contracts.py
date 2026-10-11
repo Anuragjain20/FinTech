@@ -1,4 +1,4 @@
-from app.contracts import compare, risk, templates
+from app.modules.contracts import compare, risk, templates
 
 NDA = {"party_a_name": "Acme Pvt Ltd", "party_a_address": "Mumbai", "party_b_name": "Beta LLP", "party_b_address": "Pune",
        "effective_date": "2024-04-01", "seat_city": "Mumbai", "purpose": "evaluating a joint venture"}

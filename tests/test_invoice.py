@@ -1,4 +1,4 @@
-from app.invoice import extract, gst
+from app.modules.invoices import extract, gst
 from tests.conftest import BUYER_OTHER, BUYER_SAME, SUPPLIER
 
 INVOICE_TEXT = f"""Sharma Traders Pvt Ltd
