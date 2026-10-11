@@ -16,12 +16,14 @@ from tests.test_invoice import INVOICE_TEXT
 
 def test_production_settings_guard():
     with pytest.raises(ValueError, match="ADMIN_TOKEN"):
-        Settings(env="production", database_url="postgresql+psycopg://x", celery_eager=False)
+        Settings(env="production", admin_token="dev-admin-token", database_url="postgresql+psycopg://x", celery_eager=False)
     with pytest.raises(ValueError, match="SQLite"):
-        Settings(env="production", admin_token="x" * 32, celery_eager=False)
+        Settings(env="production", admin_token="x" * 32, celery_eager=False, session_secret="y" * 32, database_url="sqlite:///x.db")
     with pytest.raises(ValueError, match="CELERY_EAGER"):
-        Settings(env="production", admin_token="x" * 32, database_url="postgresql+psycopg://x")
-    Settings(env="production", admin_token="x" * 32, database_url="postgresql+psycopg://x", celery_eager=False)
+        Settings(env="production", admin_token="x" * 32, database_url="postgresql+psycopg://x", session_secret="y" * 32)
+    with pytest.raises(ValueError, match="SESSION_SECRET"):
+        Settings(env="production", admin_token="x" * 32, database_url="postgresql+psycopg://x", celery_eager=False)
+    Settings(env="production", admin_token="x" * 32, database_url="postgresql+psycopg://x", celery_eager=False, session_secret="y" * 32)
 
 
 def test_health_ready_metrics_headers(client):

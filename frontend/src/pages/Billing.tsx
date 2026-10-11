@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { inr } from "../ui";
 
-const LABEL: Record<string, string> = { invoices: "Invoices", reconciliations: "Reconciliations", contracts: "Contracts" };
+const LABEL: Record<string, string> = { invoices: "Invoices", reconciliations: "Reconciliations", contracts: "Contracts", signatures: "Signature requests", ai_reviews: "AI legal reviews" };
 
 export function Billing() {
   const [b, setB] = useState<any>(null);
@@ -25,10 +25,10 @@ export function Billing() {
       </div>
       <h3>Available plans</h3>
       <table>
-        <thead><tr><th>Plan</th><th>Price / month</th><th>Invoices</th><th>Reconciliations</th><th>Contracts</th></tr></thead>
+        <thead><tr><th>Plan</th><th>Price / month</th><th>Invoices</th><th>Reconciliations</th><th>Contracts</th><th>Signatures</th><th>AI reviews</th></tr></thead>
         <tbody>{Object.entries<any>(b.plans).map(([name, p]) => (
           <tr key={name}><td>{name}{name === b.plan && " (current)"}</td><td>{inr(p.price_inr)}</td>
-            <td>{p.invoices ?? "Unlimited"}</td><td>{p.reconciliations ?? "Unlimited"}</td><td>{p.contracts ?? "Unlimited"}</td></tr>))}
+            <td>{p.invoices ?? "Unlimited"}</td><td>{p.reconciliations ?? "Unlimited"}</td><td>{p.contracts ?? "Unlimited"}</td><td>{p.signatures ?? "Unlimited"}</td><td>{p.ai_reviews ?? "Unlimited"}</td></tr>))}
         </tbody>
       </table>
     </section>

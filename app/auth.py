@@ -7,9 +7,10 @@ import hashlib
 import hmac
 import secrets
 from dataclasses import dataclass
+from datetime import timedelta
 
-from fastapi import Depends, Header, HTTPException
-from sqlalchemy import insert, select, update
+from fastapi import Depends, Header, HTTPException, Request
+from sqlalchemy import delete, insert, select, update
 
 from . import db
 from .config import settings
@@ -51,14 +52,49 @@ def list_keys(tenant_id: str) -> list[dict]:
     return [{"label": r.label, "role": r.role, "revoked": bool(r.revoked)} for r in rows]
 
 
-def principal(x_api_key: str = Header(default="")) -> Principal:
-    row = None
+SESSION_COOKIE = "fk_session"
+
+
+def _session_principal(token: str) -> Principal | None:
+    with db.engine().connect() as c:
+        row = c.execute(
+            select(db.users.c.tenant_id, db.users.c.role, db.users.c.email)
+            .join(db.sessions, db.sessions.c.user_id == db.users.c.id)
+            .where(db.sessions.c.token_hash == _hash(token), db.sessions.c.expires_at > db.now(), db.users.c.active == 1)
+        ).first()
+    return Principal(row.tenant_id, row.role, row.email) if row else None
+
+
+def create_session(user_id: str) -> str:
+    token = secrets.token_urlsafe(32)
+    with db.engine().begin() as c:
+        c.execute(insert(db.sessions).values(token_hash=_hash(token), user_id=user_id, created_at=db.now(),
+                                             expires_at=db.now() + timedelta(hours=settings.session_ttl_hours)))
+    return token
+
+
+def delete_session(token: str) -> None:
+    with db.engine().begin() as c:
+        c.execute(delete(db.sessions).where(db.sessions.c.token_hash == _hash(token)))
+
+
+def principal(request: Request, x_api_key: str = Header(default="")) -> Principal:
+    """API key (machine clients) or session cookie (browser SSO). Cookie-authenticated writes must carry
+    an X-Requested-With header, which a cross-site form post cannot set (CSRF defence)."""
     if x_api_key:
         with db.engine().connect() as c:
             row = c.execute(select(db.api_keys).where(db.api_keys.c.key_hash == _hash(x_api_key))).first()
-    if not row or row.revoked:
+        if row and not row.revoked:
+            return Principal(row.tenant_id, row.role, row.label or "key")
         raise HTTPException(401, "Invalid or missing X-API-Key")
-    return Principal(row.tenant_id, row.role, row.label or "key")
+    token = request.cookies.get(SESSION_COOKIE)
+    if token:
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not request.headers.get("x-requested-with"):
+            raise HTTPException(403, "Missing X-Requested-With header")
+        p = _session_principal(token)
+        if p:
+            return p
+    raise HTTPException(401, "Invalid or missing credentials")
 
 
 def require(min_role: str):

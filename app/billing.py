@@ -18,10 +18,10 @@ from .config import settings
 
 # monthly limits; None = unlimited
 PLANS = {
-    "free":    {"invoices": 20,   "reconciliations": 2,    "contracts": 5,    "price_inr": 0},
-    "starter": {"invoices": 300,  "reconciliations": 10,   "contracts": 30,   "price_inr": 1999},
-    "growth":  {"invoices": 2000, "reconciliations": 60,   "contracts": 200,  "price_inr": 4999},
-    "scale":   {"invoices": None, "reconciliations": None, "contracts": None, "price_inr": 14999},
+    "free":    {"invoices": 20,   "reconciliations": 2,    "contracts": 5,    "signatures": 3,    "ai_reviews": 5,    "price_inr": 0},
+    "starter": {"invoices": 300,  "reconciliations": 10,   "contracts": 30,   "signatures": 30,   "ai_reviews": 50,   "price_inr": 1999},
+    "growth":  {"invoices": 2000, "reconciliations": 60,   "contracts": 200,  "signatures": 300,  "ai_reviews": 500,  "price_inr": 4999},
+    "scale":   {"invoices": None, "reconciliations": None, "contracts": None, "signatures": None, "ai_reviews": None, "price_inr": 14999},
 }
 
 router = APIRouter(tags=["billing"])
@@ -45,7 +45,7 @@ def consume(tenant_id: str, metric: str, n: int = 1) -> None:
 def overview(p: Principal = Depends(require("viewer"))):
     plan = tenant_plan(p.tenant_id)
     return {"plan": plan, "limits": PLANS[plan],
-            "usage": {m: db.usage_get(p.tenant_id, m) for m in ("invoices", "reconciliations", "contracts")},
+            "usage": {m: db.usage_get(p.tenant_id, m) for m in ("invoices", "reconciliations", "contracts", "signatures", "ai_reviews")},
             "plans": PLANS}
 
 

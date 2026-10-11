@@ -35,6 +35,37 @@ class Settings(BaseSettings):
     imap_password: str = ""
     imap_tenant_id: str = ""                     # tenant that owns invoices arriving in this mailbox
 
+    # --- SSO (OpenID Connect: Keycloak, Authentik, Google, Azure AD, Okta, ...). Empty issuer disables SSO.
+    oidc_issuer: str = ""                        # e.g. https://keycloak.example.com/realms/acme
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_provider_name: str = "SSO"
+    public_base_url: str = "http://localhost:8000"   # externally visible origin; used for the OIDC redirect URI
+    session_secret: str = "dev-session-secret"   # signs the short-lived login-transaction cookie
+    session_ttl_hours: int = 12
+    cookie_secure: bool | None = None            # default: True in production
+
+    # --- e-signature
+    signing_p12_path: str = ""                   # PKCS#12 identity used to seal signed PDFs. Empty: ephemeral self-signed (dev only)
+    signing_p12_password: str = ""
+    signing_otp_ttl_minutes: int = 10
+    signing_link_ttl_days: int = 14
+    smtp_host: str = ""                          # empty: emails are captured in memory (dev/tests)
+    smtp_port: int = 587
+    smtp_starttls: bool = True
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "no-reply@localhost"
+
+    # --- legal RAG
+    llm_base_url: str = ""                       # any OpenAI-compatible server: Ollama (http://ollama:11434/v1), vLLM, llama.cpp
+    llm_model: str = ""
+    llm_api_key: str = ""
+    llm_timeout_s: int = 120
+    embedding_model: str = ""                    # sentence-transformers model name; empty = lexical (BM25) retrieval only
+    rag_top_k: int = 4
+
     razorpay_webhook_secret: str = ""
     sentry_dsn: str = ""
 
@@ -45,9 +76,15 @@ class Settings(BaseSettings):
                 raise ValueError("FINTECH_ADMIN_TOKEN must be set to a strong secret (>=24 chars) in production")
             if self.database_url.startswith("sqlite"):
                 raise ValueError("SQLite is not supported in production; set FINTECH_DATABASE_URL to PostgreSQL")
+            if self.session_secret == "dev-session-secret" or len(self.session_secret) < 24:
+                raise ValueError("FINTECH_SESSION_SECRET must be set to a strong secret (>=24 chars) in production")
             if self.celery_eager:
                 raise ValueError("Set FINTECH_CELERY_EAGER=false in production so work runs in the worker")
         return self
+
+    @property
+    def secure_cookies(self) -> bool:
+        return self.env == "production" if self.cookie_secure is None else self.cookie_secure
 
 
 settings = Settings()

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, download } from "../api";
 import { Badge, Err, canApprove, canWrite, statusTone, useAction } from "../ui";
+import { LegalReview } from "./LegalReview";
+import { SigningPanel } from "./Signing";
 
 function Review({ review }: { review: any }) {
   return (
@@ -41,6 +43,8 @@ function Detail({ id, role, onChange }: { id: string; role: string; onChange: ()
         <button onClick={() => download(`/contracts/${id}/docx`, `${c.title}.docx`)}>Download DOCX</button>
       </div>
       <Review review={c.review} />
+      <LegalReview key={c.version} contractId={id} role={role} />
+      <SigningPanel id={id} status={c.status} role={role} onChange={() => { load(); onChange(); }} />
     </div>
   );
 }

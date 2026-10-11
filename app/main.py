@@ -2,19 +2,22 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import insert, text
+from starlette.middleware.sessions import SessionMiddleware
 
-from . import auth, billing, db, observability
+from . import auth, billing, db, observability, sso
 from .brs.router import router as brs_router
 from .config import settings
 from .contracts.router import router as contracts_router
+from .esign.router import router as esign_router
 from .invoice.router import router as invoice_router
+from .rag.router import router as rag_router
 
 app = FastAPI(title="FinTech Suite", version="0.2.0",
               description="Invoice automation, bank reconciliation and contract drafting for Indian SMBs")
@@ -30,6 +33,8 @@ app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 if settings.cors_origins:
     app.add_middleware(CORSMiddleware, allow_origins=settings.cors_origins, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(SessionMiddleware, secret_key=settings.session_secret, same_site="lax", https_only=settings.secure_cookies,
+                   max_age=600, session_cookie="fk_login")  # only holds the OIDC state/nonce during login
 observability.setup(app)
 
 
@@ -107,8 +112,15 @@ def audit(entity_id: str | None = None, p: auth.Principal = Depends(auth.require
 app.include_router(invoice_router)
 app.include_router(brs_router)
 app.include_router(contracts_router)
+app.include_router(esign_router)
+app.include_router(rag_router)
 app.include_router(billing.router)
+app.include_router(sso.router)
 
 _dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-if _dist.is_dir():  # serve the built SPA from the same origin (no CORS needed)
+if _dist.is_dir():
+    @app.get("/s/{token}", include_in_schema=False)
+    def signing_page(token: str):  # SPA entry for the public signing page
+        return FileResponse(_dist / "index.html")
+  # serve the built SPA from the same origin (no CORS needed)
     app.mount("/", StaticFiles(directory=_dist, html=True), name="ui")

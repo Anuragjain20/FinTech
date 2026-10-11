@@ -9,8 +9,8 @@ export function Badge({ children, tone }: { children: React.ReactNode; tone?: "o
 }
 
 export function statusTone(s: string): "ok" | "warn" | "bad" | undefined {
-  if (["approved", "ready", "matched", "confirmed", "finalized"].includes(s)) return "ok";
-  if (["needs_review", "suggested", "processing", "in_review", "draft", "open"].includes(s)) return "warn";
+  if (["approved", "ready", "matched", "confirmed", "finalized", "signed", "completed"].includes(s)) return "ok";
+  if (["needs_review", "suggested", "processing", "in_review", "draft", "open", "out_for_signature", "pending"].includes(s)) return "warn";
   if (["failed"].includes(s)) return "bad";
 }
 

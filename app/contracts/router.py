@@ -91,8 +91,8 @@ def get_contract(cid: str, p: Principal = Depends(require("viewer"))):
 @router.put("/{cid}")
 def edit(cid: str, body: EditIn, p: Principal = Depends(require("operator"))):
     d = _load(p, cid)
-    if d["status"] in ("in_review", "approved"):
-        raise HTTPException(409, f"Contract is {d['status']}; it cannot be edited")
+    if d["status"] != "draft":
+        raise HTTPException(409, f"Contract is {d['status']}; only drafts can be edited")
     d["data"]["versions"].append({"text": body.text, "by": p.actor, "at": db.now_iso(), "note": body.note or "edited"})
     db.put(p.tenant_id, KIND, d["data"], "draft", cid)
     db.audit(p.tenant_id, p.actor, "contract.edited", KIND, cid, {"version": len(d["data"]["versions"])})

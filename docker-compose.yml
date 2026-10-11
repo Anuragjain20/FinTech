@@ -43,4 +43,11 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
 
-volumes: { pgdata: {}, redisdata: {}, miniodata: {} }
+  # Optional local LLM for legal review:  docker compose --profile llm up -d ollama
+  #   then: docker compose exec ollama ollama pull <model>   and set FINTECH_LLM_BASE_URL/FINTECH_LLM_MODEL in .env
+  ollama:
+    image: ollama/ollama
+    profiles: ["llm"]
+    volumes: [ollama:/root/.ollama]
+
+volumes: { pgdata: {}, redisdata: {}, miniodata: {}, ollama: {} }

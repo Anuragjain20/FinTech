@@ -4,6 +4,7 @@ Every query filters on tenant_id, so a tenant can never read another's rows. The
 schema is managed by Alembic (see /migrations); `create_all` is used only for
 SQLite dev/test databases.
 """
+import threading
 import uuid
 from datetime import datetime, timezone
 
@@ -13,9 +14,11 @@ from sqlalchemy import (
     DateTime,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Table,
+    Text,
     create_engine,
     func,
     insert,
@@ -54,6 +57,22 @@ audit_t = Table("audit", metadata,
                 Column("entity", String(32)), Column("entity_id", String(32)), Column("detail", JSONType),
                 Column("at", DateTime(timezone=True), nullable=False),
                 Index("audit_tenant_entity", "tenant_id", "entity_id"))
+users = Table("users", metadata,
+              Column("id", String(32), primary_key=True), Column("tenant_id", String(32), nullable=False, index=True),
+              Column("email", String(254), nullable=False, unique=True),  # one tenant per email address
+              Column("name", String(200)), Column("role", String(16), nullable=False),
+              Column("active", Integer, nullable=False, default=1),
+              Column("created_at", DateTime(timezone=True), nullable=False), Column("last_login", DateTime(timezone=True)))
+sessions = Table("sessions", metadata,
+                 Column("token_hash", String(64), primary_key=True), Column("user_id", String(32), nullable=False, index=True),
+                 Column("created_at", DateTime(timezone=True), nullable=False),
+                 Column("expires_at", DateTime(timezone=True), nullable=False))
+rag_chunks = Table("rag_chunks", metadata,
+                   Column("id", String(32), primary_key=True),
+                   Column("tenant_id", String(32), index=True),  # NULL = shared public-law corpus, else tenant-private
+                   Column("source", String(300), nullable=False), Column("section", String(100)),
+                   Column("text", Text, nullable=False), Column("embedding", LargeBinary),
+                   Column("created_at", DateTime(timezone=True), nullable=False))
 usage = Table("usage", metadata,
               Column("tenant_id", String(32), primary_key=True), Column("period", String(7), primary_key=True),
               Column("metric", String(32), primary_key=True), Column("count", Integer, nullable=False, default=0))
@@ -62,20 +81,28 @@ _engine: Engine | None = None
 _url: str | None = None
 
 
+_engine_lock = threading.Lock()
+
+
 def engine() -> Engine:
     global _engine, _url
-    if _engine is None or _url != settings.database_url:
-        kw = {"pool_pre_ping": True}
-        if settings.database_url.startswith("sqlite"):
+    if _engine is not None and _url == settings.database_url:
+        return _engine
+    with _engine_lock:  # build fully, then publish: no thread may see a half-initialised engine
+        if _engine is not None and _url == settings.database_url:
+            return _engine
+        url = settings.database_url
+        kw: dict = {"pool_pre_ping": True}
+        if url.startswith("sqlite"):
             kw = {"connect_args": {"check_same_thread": False}}
-            if ":memory:" in settings.database_url or settings.database_url in ("sqlite://", "sqlite:///"):
+            if ":memory:" in url or url in ("sqlite://", "sqlite:///"):
                 from sqlalchemy.pool import StaticPool
                 kw["poolclass"] = StaticPool
-        _engine = create_engine(settings.database_url, **kw)
-        _url = settings.database_url
-        if settings.database_url.startswith("sqlite"):
-            metadata.create_all(_engine)
-    return _engine
+        eng = create_engine(url, **kw)
+        if url.startswith("sqlite"):
+            metadata.create_all(eng)
+        _engine, _url = eng, url
+        return eng
 
 
 def reset() -> None:
@@ -138,6 +165,30 @@ def list_(tenant_id: str, kind: str, status: str | None = None, limit: int | Non
         q = q.limit(limit).offset(offset)
     with engine().connect() as c:
         return [_row(r) for r in c.execute(q)]
+
+
+def get_any(kind: str, doc_id: str) -> dict | None:
+    """Tenant-less lookup for unauthenticated, token-guarded flows (e-signature). Caller must prove possession of a secret."""
+    with engine().connect() as c:
+        r = c.execute(select(docs).where(docs.c.id == doc_id, docs.c.kind == kind)).first()
+    return {**_row(r), "tenant_id": r.tenant_id} if r else None
+
+
+def update_locked(tenant_id: str, kind: str, doc_id: str, fn, status: str | None = None):
+    """Atomic read-modify-write of one document (row lock on PostgreSQL). `fn(data)` mutates and may return
+    (result, new_status); the result is returned. Prevents lost updates when several people act at once."""
+    with engine().begin() as c:
+        r = c.execute(select(docs).where(docs.c.id == doc_id, docs.c.tenant_id == tenant_id, docs.c.kind == kind)
+                      .with_for_update()).first()
+        if r is None:
+            raise LookupError(doc_id)
+        data = dict(r.data)
+        result = fn(data)
+        if isinstance(result, tuple):  # fn may return (result, new_status)
+            result, status = result
+        new_status = status or r.status
+        c.execute(update(docs).where(docs.c.id == doc_id).values(data=data, status=new_status, updated_at=now()))
+        return result
 
 
 def count(tenant_id: str, kind: str, status: str | None = None) -> int:

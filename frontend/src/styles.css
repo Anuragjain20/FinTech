@@ -29,3 +29,8 @@ input.lowconf { border-color:var(--warn); background:color-mix(in srgb, var(--wa
 .issues { padding-left:18px; } .issues li.error, .issues li.warning { margin:3px 0; } .issues li.warning { color:var(--warn); }
 textarea { width:100%; font-family:ui-monospace, Menlo, monospace; font-size:13px; }
 progress { width:100%; }
+
+a.btn { display:block; text-align:center; text-decoration:none; padding:8px 12px; border-radius:6px; }
+blockquote { margin:8px 0; padding:2px 12px; border-left:3px solid var(--line); }
+details { margin:6px 0; } summary { cursor:pointer; }
+code { font-size:12px; }
