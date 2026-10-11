@@ -3,6 +3,8 @@ import io
 from openpyxl import Workbook
 from openpyxl.styles import Font
 
+from ..uploads import safe_cell
+
 
 def build_xlsx(rec: dict, summary: dict, classified: dict) -> bytes:
     wb = Workbook()
@@ -21,7 +23,7 @@ def build_xlsx(rec: dict, summary: dict, classified: dict) -> bytes:
         for c in s[1]:
             c.font = bold
         for r in rows:
-            s.append(r)
+            s.append([safe_cell(x) for x in r])
 
     bank = {t["id"]: t for t in rec["bank"]}
     book = {t["id"]: t for t in rec["book"]}

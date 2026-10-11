@@ -59,7 +59,22 @@ def _to_num(v) -> float:
     return -n if neg else n
 
 
+def _read_pdf(data: bytes) -> list[list]:
+    """Digital (text) bank-statement PDFs: pull table rows from every page with pdfplumber."""
+    import pdfplumber
+    rows: list[list] = []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for page in pdf.pages:
+            for table in page.extract_tables():
+                rows += [[(c or "").replace("\n", " ").strip() for c in r] for r in table]
+    if not rows:
+        raise ParseError("No tables found in PDF (scanned statements need OCR; export CSV/XLSX from net-banking instead)")
+    return rows
+
+
 def _read_rows(filename: str, data: bytes) -> list[list]:
+    if filename.lower().endswith(".pdf"):
+        return _read_pdf(data)
     if filename.lower().endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook
         ws = load_workbook(io.BytesIO(data), data_only=True, read_only=True).active
@@ -78,12 +93,16 @@ def _map_columns(header: list) -> dict[str, int]:
     return cols
 
 
+def _getter(row: list, cols: dict[str, int]):
+    return lambda k: row[cols[k]] if k in cols and cols[k] < len(row) else None
+
+
 def parse_statement(filename: str, data: bytes, side: str, prefix: str) -> list[dict]:
     """side: 'bank' or 'book'. prefix is used to build stable txn ids (e.g. 'B', 'L')."""
     rows = _read_rows(filename, data)
     # Statements often have preamble lines: find the first row that looks like a header.
-    for hi, row in enumerate(rows):
-        cols = _map_columns(row)
+    for hi, header_row in enumerate(rows):
+        cols = _map_columns(header_row)
         if "date" in cols and ("amount" in cols or "debit" in cols or "credit" in cols):
             break
     else:
@@ -96,7 +115,7 @@ def parse_statement(filename: str, data: bytes, side: str, prefix: str) -> list[
         d = _to_date(row[cols["date"]])
         if d is None:
             continue  # totals, blank lines, footers
-        get = lambda k: row[cols[k]] if k in cols and cols[k] < len(row) else None
+        get = _getter(row, cols)
         if "amount" in cols and "debit" not in cols and "credit" not in cols:
             amt = _to_num(get("amount"))
         else:

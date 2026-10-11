@@ -1,7 +1,7 @@
 """Business validation for extracted invoices. Pure functions; no I/O."""
 from decimal import Decimal
 
-from .. import config
+from ..config import settings
 from .gst import state_code, validate_gstin
 
 ROUNDING = Decimal("1.00")  # invoices often carry round-off up to a rupee
@@ -70,7 +70,7 @@ def validate(inv: dict, confidence: dict, existing: list[dict]) -> list[dict]:
                 break
 
     for k in CRITICAL:
-        if k in inv and confidence.get(k, 1.0) < config.REVIEW_CONFIDENCE_THRESHOLD:
+        if k in inv and confidence.get(k, 1.0) < settings.review_threshold:
             add("LOW_CONFIDENCE", "warning", k, f"{k} extracted with confidence {confidence.get(k):.2f}")
     return issues
 

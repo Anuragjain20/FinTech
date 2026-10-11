@@ -51,7 +51,7 @@ def parse_invoice_text(text: str) -> dict:
         if val not in (None, ""):
             f[key], conf[key] = val, c
 
-    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if lines:
         set_("supplier_name", lines[0][:120], 0.6)
 
@@ -135,6 +135,6 @@ def _ocr(filename: str, data: bytes) -> str:
             res = PaddleOCR(use_angle_cls=True, lang="en").ocr(path)
             return "\n".join(ln[1][0] for page in res or [] for ln in page or [])
         except ImportError:
-            raise OcrUnavailable("No OCR engine installed. Install with: pip install '.[ocr]'")
+            raise OcrUnavailable("No OCR engine installed. Install with: pip install '.[ocr]'") from None
     finally:
         os.unlink(path)

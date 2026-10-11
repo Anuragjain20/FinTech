@@ -1,0 +1,46 @@
+# Self-hosted stack: PostgreSQL, Redis, MinIO (S3), API+UI, Celery worker.
+# Usage: cp .env.example .env && edit secrets && docker compose up --build
+x-app: &app
+  build: .
+  env_file: .env
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_started }
+    minio: { condition: service_started }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: { POSTGRES_USER: fintech, POSTGRES_PASSWORD: fintech, POSTGRES_DB: fintech }
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U fintech"], interval: 5s, retries: 10 }
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment: { MINIO_ROOT_USER: minio, MINIO_ROOT_PASSWORD: "${AWS_SECRET_ACCESS_KEY}" }
+    volumes: [miniodata:/data]
+  minio-setup:
+    image: minio/mc
+    depends_on: [minio]
+    entrypoint: ["/bin/sh", "-c", "sleep 3; mc alias set l http://minio:9000 minio $${MINIO_PW} && mc mb -p l/fintech-uploads"]
+    environment: { MINIO_PW: "${AWS_SECRET_ACCESS_KEY}" }
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+  worker:
+    <<: *app
+    command: ["celery", "-A", "app.worker", "worker", "-B", "-l", "info", "--concurrency", "2"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+
+volumes: { pgdata: {}, redisdata: {}, miniodata: {} }

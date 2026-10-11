@@ -153,7 +153,7 @@ def render(template_id: str, answers: dict) -> dict:
             try:
                 ctx[q["key"]] = _coerce(q, v)
             except (TypeError, ValueError):
-                raise TemplateError(f"Invalid value for {q['key']}")
+                raise TemplateError(f"Invalid value for {q['key']}") from None
     if missing:
         raise TemplateError(f"Missing required answers: {', '.join(missing)}")
     ctx.setdefault("mutual", False)

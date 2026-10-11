@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from .. import db
+from .. import billing, db
 from ..auth import Principal, require
 from . import compare, docx_export, risk, templates
 
@@ -54,10 +54,11 @@ def generate(body: GenerateIn, p: Principal = Depends(require("operator"))):
     try:
         doc = templates.render(body.template_id, body.answers)
     except templates.TemplateError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
+    billing.consume(p.tenant_id, "contracts")
     text = templates.to_text(doc)
     data = {"title": doc["title"], "template_id": body.template_id, "lawyer_reviewed": doc["lawyer_reviewed"],
-            "answers": body.answers, "versions": [{"text": text, "by": p.actor, "at": db.now(), "note": "generated"}]}
+            "answers": body.answers, "versions": [{"text": text, "by": p.actor, "at": db.now_iso(), "note": "generated"}]}
     cid = db.put(p.tenant_id, KIND, data, "draft")
     db.audit(p.tenant_id, p.actor, "contract.generated", KIND, cid, {"template": body.template_id})
     return {"id": cid, "status": "draft", "title": doc["title"], "text": text,
@@ -72,9 +73,10 @@ def _load(p: Principal, cid: str) -> dict:
 
 
 @router.get("")
-def list_contracts(p: Principal = Depends(require("viewer"))):
-    return [{"id": d["id"], "title": d["data"]["title"], "status": d["status"], "versions": len(d["data"]["versions"])}
-            for d in db.list_(p.tenant_id, KIND)]
+def list_contracts(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), p: Principal = Depends(require("viewer"))):
+    return {"total": db.count(p.tenant_id, KIND), "items": [
+        {"id": d["id"], "title": d["data"]["title"], "status": d["status"], "versions": len(d["data"]["versions"])}
+        for d in db.list_(p.tenant_id, KIND, None, limit, offset)]}
 
 
 @router.get("/{cid}")
@@ -91,7 +93,7 @@ def edit(cid: str, body: EditIn, p: Principal = Depends(require("operator"))):
     d = _load(p, cid)
     if d["status"] in ("in_review", "approved"):
         raise HTTPException(409, f"Contract is {d['status']}; it cannot be edited")
-    d["data"]["versions"].append({"text": body.text, "by": p.actor, "at": db.now(), "note": body.note or "edited"})
+    d["data"]["versions"].append({"text": body.text, "by": p.actor, "at": db.now_iso(), "note": body.note or "edited"})
     db.put(p.tenant_id, KIND, d["data"], "draft", cid)
     db.audit(p.tenant_id, p.actor, "contract.edited", KIND, cid, {"version": len(d["data"]["versions"])})
     return {"id": cid, "version": len(d["data"]["versions"]), "review": risk.review(body.text)}

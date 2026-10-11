@@ -1,4 +1,3 @@
-from app import config
 from tests.conftest import SUPPLIER
 
 
@@ -20,7 +19,7 @@ def test_rbac_viewer_cannot_write(client, role_headers):
 def test_tenant_isolation(client, admin, other_admin):
     inv = client.post("/invoices", json={"invoice_number": "A1", "supplier_gstin": SUPPLIER}, headers=admin).json()
     assert client.get(f"/invoices/{inv['id']}", headers=other_admin).status_code == 404
-    assert client.get("/invoices", headers=other_admin).json() == []
+    assert client.get("/invoices", headers=other_admin).json() == {"total": 0, "items": []}
     assert client.post(f"/invoices/{inv['id']}/approve", json={"override_reason": "x"}, headers=other_admin).status_code == 404
 
 

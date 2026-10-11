@@ -1,19 +1,22 @@
 """Export approved invoices: CSV and Tally purchase-voucher XML."""
-import csv
-import io
+import functools
 from xml.etree import ElementTree as ET
+
+from ..uploads import safe_csv
 
 CSV_COLUMNS = ["id", "invoice_number", "invoice_date", "supplier_name", "supplier_gstin", "buyer_gstin",
                "taxable_value", "cgst", "sgst", "igst", "total"]
 
 
+def _ledger_entry(voucher, ledger, amount, debit):
+    e = ET.SubElement(voucher, "ALLLEDGERENTRIES.LIST")
+    ET.SubElement(e, "LEDGERNAME").text = ledger
+    ET.SubElement(e, "ISDEEMEDPOSITIVE").text = "Yes" if debit else "No"
+    ET.SubElement(e, "AMOUNT").text = f"{-amount if debit else amount:.2f}"
+
+
 def to_csv(rows: list[dict]) -> str:
-    out = io.StringIO()
-    w = csv.DictWriter(out, fieldnames=CSV_COLUMNS, extrasaction="ignore")
-    w.writeheader()
-    for r in rows:
-        w.writerow({"id": r["id"], **r["data"]["invoice"]})
-    return out.getvalue()
+    return safe_csv([{"id": r["id"], **r["data"]["invoice"]} for r in rows], CSV_COLUMNS)
 
 
 def to_tally_xml(rows: list[dict], company: str = "My Company", purchase_ledger: str = "Purchase",
@@ -41,12 +44,7 @@ def to_tally_xml(rows: list[dict], company: str = "My Company", purchase_ledger:
         ET.SubElement(v, "PARTYLEDGERNAME").text = inv.get("supplier_name") or ""
         ET.SubElement(v, "NARRATION").text = f"Imported from invoice {r['id']}"
 
-        def entry(ledger, amount, debit):
-            e = ET.SubElement(v, "ALLLEDGERENTRIES.LIST")
-            ET.SubElement(e, "LEDGERNAME").text = ledger
-            ET.SubElement(e, "ISDEEMEDPOSITIVE").text = "Yes" if debit else "No"
-            ET.SubElement(e, "AMOUNT").text = f"{-amount if debit else amount:.2f}"
-
+        entry = functools.partial(_ledger_entry, v)
         entry(inv.get("supplier_name") or "", inv["total"], debit=False)
         entry(purchase_ledger, inv["taxable_value"], debit=True)
         for name, led in (("cgst", cgst_ledger), ("sgst", sgst_ledger), ("igst", igst_ledger)):

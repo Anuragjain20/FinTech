@@ -76,7 +76,7 @@ def test_correction_revalidates_and_duplicate_detection(client, admin):
     fixed = client.put(f"/invoices/{dup['id']}", json={**good, "invoice_number": "D-2", "invoice_date": "2024-02-03"}, headers=admin).json()
     assert fixed["status"] == "ready"
     queue = client.get("/invoices/review-queue", headers=admin).json()
-    assert queue == []
+    assert queue["items"] == []
 
 
 def test_invalid_gstin_flagged(client, admin):
@@ -87,6 +87,12 @@ def test_invalid_gstin_flagged(client, admin):
 
 def test_upload_txt_and_unsupported_pdf_without_ocr(client, admin):
     r = client.post("/invoices/upload", files={"file": ("a.txt", INVOICE_TEXT.encode())}, headers=admin)
-    assert r.status_code == 201 and r.json()["invoice"]["invoice_number"] == "INV/2024/0042"
+    assert r.status_code == 202
+    got = client.get(f"/invoices/{r.json()['id']}", headers=admin).json()  # eager worker has finished
+    assert got["status"] != "processing" and got["invoice"]["invoice_number"] == "INV/2024/0042"
+    assert client.get(f"/invoices/{got['id']}/file", headers=admin).content == INVOICE_TEXT.encode()
     r = client.post("/invoices/upload", files={"file": ("a.pdf", b"%PDF-1.4")}, headers=admin)
-    assert r.status_code == 422
+    failed = client.get(f"/invoices/{r.json()['id']}", headers=admin).json()
+    assert failed["status"] == "failed" and "OCR" in failed["error"]
+    assert client.post(f"/invoices/{failed['id']}/approve", json={"override_reason": "x"}, headers=admin).status_code == 409
+    assert client.post("/invoices/upload", files={"file": ("a.exe", b"x")}, headers=admin).status_code == 415

@@ -1,0 +1,42 @@
+name: CI
+on: { push: { branches: [main] }, pull_request: {} }
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: pw, POSTGRES_DB: fintech }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready" --health-interval 5s --health-retries 10
+    env:
+      FINTECH_TEST_DATABASE_URL: postgresql+psycopg://postgres:pw@localhost:5432/fintech
+      FINTECH_DATABASE_URL: postgresql+psycopg://postgres:pw@localhost:5432/fintech
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -e '.[dev]'
+      - run: ruff check .
+      - name: Migrations apply and roll back cleanly
+        run: alembic upgrade head && alembic downgrade base && alembic upgrade head
+      - name: Tests (PostgreSQL)
+        run: pytest -q
+      - name: Tests (SQLite)
+        run: FINTECH_TEST_DATABASE_URL= pytest -q
+  frontend:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: frontend/package-lock.json }
+      - run: npm ci
+      - run: npm run build
+  docker:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t fintech-suite .

@@ -1,13 +1,15 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel
 
-from .. import db
+from .. import billing, db, storage
 from ..auth import Principal, require
+from ..uploads import read_limited
 from . import match, parse, report
 
 router = APIRouter(prefix="/reconciliations", tags=["bank-reconciliation"])
 KIND = "reconciliation"
+STATEMENT_TYPES = (".csv", ".xlsx", ".xlsm", ".pdf")
 
 
 class PairIn(BaseModel):
@@ -37,25 +39,33 @@ async def create(bank_file: UploadFile = File(...), book_file: UploadFile = File
                  name: str = Form("Reconciliation"), bank_closing_balance: float | None = Form(None),
                  book_closing_balance: float | None = Form(None), date_tolerance_days: int = Form(3),
                  amount_tolerance: float = Form(0.0), p: Principal = Depends(require("operator"))):
+    bank_name, bank_raw = await read_limited(bank_file, STATEMENT_TYPES)
+    book_name, book_raw = await read_limited(book_file, STATEMENT_TYPES)
     try:
-        bank = parse.parse_statement(bank_file.filename or "", await bank_file.read(), "bank", "B")
-        book = parse.parse_statement(book_file.filename or "", await book_file.read(), "book", "L")
+        bank = parse.parse_statement(bank_name, bank_raw, "bank", "B")
+        book = parse.parse_statement(book_name, book_raw, "book", "L")
     except parse.ParseError as e:
-        raise HTTPException(422, str(e))
+        raise HTTPException(422, str(e)) from e
+    except Exception as e:  # corrupt xlsx/pdf etc.
+        raise HTTPException(422, "Could not read the uploaded files") from e
+    billing.consume(p.tenant_id, "reconciliations")
     matches = match.run_matching(bank, book, date_tolerance_days, amount_tolerance=amount_tolerance)
     data = {"name": name, "bank": bank, "book": book, "matches": matches, "rejected": [],
             "bank_closing": bank_closing_balance, "book_closing": book_closing_balance,
             "params": {"date_tolerance_days": date_tolerance_days, "amount_tolerance": amount_tolerance}}
     rec_id = db.put(p.tenant_id, KIND, data, "open")
+    storage.put(storage.key_for(p.tenant_id, rec_id, bank_name), bank_raw)
+    storage.put(storage.key_for(p.tenant_id, rec_id, book_name), book_raw)
     db.audit(p.tenant_id, p.actor, "reconciliation.created", KIND, rec_id,
              {"bank": len(bank), "book": len(book), "matches": len(matches)})
     return _view(db.get(p.tenant_id, KIND, rec_id))
 
 
 @router.get("")
-def list_all(p: Principal = Depends(require("viewer"))):
-    return [{"id": d["id"], "name": d["data"].get("name"), "status": d["status"], "created_at": d["created_at"]}
-            for d in db.list_(p.tenant_id, KIND)]
+def list_all(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), p: Principal = Depends(require("viewer"))):
+    return {"total": db.count(p.tenant_id, KIND), "items": [
+        {"id": d["id"], "name": d["data"].get("name"), "status": d["status"], "created_at": d["created_at"]}
+        for d in db.list_(p.tenant_id, KIND, None, limit, offset)]}
 
 
 @router.get("/{rec_id}")
