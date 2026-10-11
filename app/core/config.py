@@ -58,12 +58,19 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "no-reply@localhost"
 
-    # --- legal RAG
-    llm_base_url: str = ""                       # any OpenAI-compatible server: Ollama (http://ollama:11434/v1), vLLM, llama.cpp
-    llm_model: str = ""
-    llm_api_key: str = ""
+    # --- AI gateway (LangChain). Switching providers/models is configuration only.
+    # chat provider: deepseek | openai | anthropic | openai_compat (Ollama, vLLM, llama.cpp, OpenRouter, ...)
+    llm_provider: str = "deepseek"
+    llm_model: str = ""                          # empty = the provider preset's default (deepseek -> deepseek-chat)
+    llm_base_url: str = ""                       # overrides the preset; required for openai_compat
+    llm_api_key: str = ""                        # empty key on a hosted provider = LLM features off (rules/retrieval only)
     llm_timeout_s: int = 120
-    embedding_model: str = ""                    # sentence-transformers model name; empty = lexical (BM25) retrieval only
+    llm_task_models: dict[str, str] = {}         # per-task model override, e.g. {"verify": "deepseek-reasoner"}
+    # embeddings provider: jina (free hosted tier) | huggingface (HF Inference API) | openai_compat | local | none
+    embedding_provider: str = "none"
+    embedding_model: str = ""                    # empty = provider preset default
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
     rag_top_k: int = 4
 
     razorpay_webhook_secret: str = ""

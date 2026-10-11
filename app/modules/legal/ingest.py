@@ -24,11 +24,17 @@ def read_text(name: str, data: bytes) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("path", type=Path)
-    ap.add_argument("--source", required=True, help="Citation label, e.g. 'Indian Contract Act, 1872'")
+    ap.add_argument("path", type=Path, nargs="?")
+    ap.add_argument("--reindex", action="store_true", help="Re-embed all chunks with the currently configured embedding model")
+    ap.add_argument("--source", help="Citation label, e.g. 'Indian Contract Act, 1872'")
     ap.add_argument("--tenant", default=None, help="Tenant id for a private corpus (default: shared)")
     ap.add_argument("--replace", action="store_true", help="Delete existing chunks with this source first")
     a = ap.parse_args(argv)
+    if a.reindex:
+        print(store.reindex())
+        return 0
+    if not a.path or not a.source:
+        ap.error("path and --source are required (unless --reindex)")
     if a.replace:
         store.delete_source(a.tenant, a.source)
     n = store.add_document(a.tenant, a.source, read_text(a.path.name, a.path.read_bytes()))

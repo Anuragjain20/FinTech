@@ -91,3 +91,9 @@ async def add_shared(file: UploadFile = File(...), source: str = Form(..., max_l
     if not n:
         raise HTTPException(422, "No text could be extracted")
     return {"source": source, "chunks": n}
+
+
+@router.post("/legal/reindex", dependencies=[Depends(admin_token)])
+def reindex():
+    """Platform operator: re-embed the whole corpus after switching FINTECH_EMBEDDING_* (safe to re-run)."""
+    return store.reindex()

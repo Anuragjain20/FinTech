@@ -45,7 +45,7 @@ def consume(tenant_id: str, metric: str, n: int = 1) -> None:
 def overview(p: Principal = Depends(require("viewer"))):
     plan = tenant_plan(p.tenant_id)
     return {"plan": plan, "limits": PLANS[plan],
-            "usage": {m: db.usage_get(p.tenant_id, m) for m in ("invoices", "reconciliations", "contracts", "signatures", "ai_reviews")},
+            "usage": {m: db.usage_get(p.tenant_id, m) for m in ("invoices", "reconciliations", "contracts", "signatures", "ai_reviews", "llm_tokens")},
             "plans": PLANS}
 
 

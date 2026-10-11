@@ -72,6 +72,7 @@ rag_chunks = Table("rag_chunks", metadata,
                    Column("tenant_id", String(32), index=True),  # NULL = shared public-law corpus, else tenant-private
                    Column("source", String(300), nullable=False), Column("section", String(100)),
                    Column("text", Text, nullable=False), Column("embedding", LargeBinary),
+                   Column("embedding_model", String(160)),  # vectors are only comparable within one model
                    Column("created_at", DateTime(timezone=True), nullable=False))
 usage = Table("usage", metadata,
               Column("tenant_id", String(32), primary_key=True), Column("period", String(7), primary_key=True),

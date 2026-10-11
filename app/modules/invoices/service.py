@@ -1,6 +1,6 @@
 """Invoice creation/processing shared by the API, the Celery worker and the mailbox poller."""
 from app.core import db, storage
-from app.modules.invoices import extract, validate
+from app.modules.invoices import extract, graph, validate
 
 KIND = "invoice"
 
@@ -12,10 +12,11 @@ def candidates(tenant_id: str, inv: dict, exclude_id: str | None = None) -> list
 
 
 def save(tenant_id: str, actor: str, inv: dict, conf: dict, source: str, doc_id: str | None = None,
-         file_key: str | None = None, action: str = "invoice.created") -> dict:
+         file_key: str | None = None, action: str = "invoice.created", extraction: dict | None = None) -> dict:
     issues = validate.validate(inv, conf, candidates(tenant_id, inv, doc_id))
     status = validate.status_for(issues)
-    doc = {"invoice": inv, "confidence": conf, "issues": issues, "source": source, "file_key": file_key}
+    doc = {"invoice": inv, "confidence": conf, "issues": issues, "source": source, "file_key": file_key,
+           "extraction": extraction}
     doc_id = db.put(tenant_id, KIND, doc, status, doc_id, ref=inv.get("supplier_gstin"))
     db.audit(tenant_id, actor, action, KIND, doc_id, {"issues": len(issues), "source": source})
     return {"id": doc_id, "status": status, **doc}
@@ -45,6 +46,12 @@ def process(tenant_id: str, doc_id: str) -> dict:
         db.put(tenant_id, KIND, failed, "failed", doc_id)
         db.audit(tenant_id, "worker", "invoice.failed", KIND, doc_id, {"error": str(e)})
         return {"id": doc_id, "status": "failed", "error": str(e)}
-    parsed = extract.parse_invoice_text(text)
+    return from_text(tenant_id, "worker", text, meta["source"], doc_id, meta["file_key"], "invoice.processed")
+
+
+def from_text(tenant_id: str, actor: str, text: str, source: str, doc_id: str | None = None, file_key: str | None = None,
+              action: str = "invoice.created") -> dict:
+    """Extract (LLM + validators when configured, rules otherwise) and persist."""
+    parsed = graph.extract_invoice(text, tenant_id)
     inv = {**parsed["fields"], "line_items": parsed["line_items"]}
-    return save(tenant_id, "worker", inv, parsed["confidence"], meta["source"], doc_id, meta["file_key"], "invoice.processed")
+    return save(tenant_id, actor, inv, parsed["confidence"], source, doc_id, file_key, action, extraction=parsed["extraction"])

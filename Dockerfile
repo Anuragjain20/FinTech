@@ -9,14 +9,15 @@ RUN npm run build
 FROM python:3.12-slim AS app
 # WITH_OCR=1 adds PaddleOCR + Docling (large; needed for scanned PDFs/images)
 ARG WITH_OCR=0
-# WITH_EMBEDDINGS=1 adds sentence-transformers (dense retrieval for legal RAG; pulls PyTorch)
-ARG WITH_EMBEDDINGS=0
+# WITH_HF=1 adds local/HF-endpoint embeddings (sentence-transformers; pulls PyTorch). Hosted providers (Jina etc.) need nothing.
+ARG WITH_HF=0
 ENV PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 FINTECH_ENV=production
 RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv
 COPY pyproject.toml ./
 COPY app ./app
-RUN EXTRAS=sentry; [ "$WITH_OCR" = "1" ] && EXTRAS="$EXTRAS,ocr"; [ "$WITH_EMBEDDINGS" = "1" ] && EXTRAS="$EXTRAS,embeddings"; pip install ".[$EXTRAS]"
+COPY evals ./evals
+RUN EXTRAS=sentry; [ "$WITH_OCR" = "1" ] && EXTRAS="$EXTRAS,ocr"; [ "$WITH_HF" = "1" ] && EXTRAS="$EXTRAS,hf"; pip install ".[$EXTRAS]"
 COPY alembic.ini ./
 COPY migrations ./migrations
 COPY --from=ui /ui/dist ./frontend/dist

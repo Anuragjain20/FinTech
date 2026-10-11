@@ -27,6 +27,7 @@ function Detail({ id, role, onChange }: { id: string; role: string; onChange: ()
     <div className="card detail">
       <h3>Invoice <Badge tone={statusTone(inv.status)}>{inv.status}</Badge></h3>
       {inv.status === "failed" && <p className="error">{inv.error}</p>}
+      {inv.extraction && <p className="muted">Extracted by <strong>{inv.extraction.method}</strong>{inv.extraction.model && ` (${inv.extraction.model})`}{inv.extraction.repairs > 0 && ` · self-corrected ${inv.extraction.repairs}×`}{inv.extraction.corrections?.length > 0 && ` · ${inv.extraction.corrections.length} OCR fix(es) to check`}{inv.extraction.disagreements?.length > 0 && ` · sources disagreed on: ${inv.extraction.disagreements.join(", ")}`}</p>}
       {inv.filename && <button onClick={() => download(`/invoices/${id}/file`, inv.filename)}>Download original</button>}
       <div className="form">{FIELDS.map((f) => (
         <label key={f}>{f.replace("_", " ")}

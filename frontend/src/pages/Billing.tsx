@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { inr } from "../ui";
 
-const LABEL: Record<string, string> = { invoices: "Invoices", reconciliations: "Reconciliations", contracts: "Contracts", signatures: "Signature requests", ai_reviews: "AI legal reviews" };
+const LABEL: Record<string, string> = { invoices: "Invoices", reconciliations: "Reconciliations", contracts: "Contracts", signatures: "Signature requests", ai_reviews: "AI legal reviews", llm_tokens: "AI tokens used" };
 
 export function Billing() {
   const [b, setB] = useState<any>(null);

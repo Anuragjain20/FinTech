@@ -11,6 +11,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy import insert, text
 from starlette.middleware.sessions import SessionMiddleware
 
+from app.ai.api import router as ai_router
 from app.core import auth, billing, db, observability
 from app.core.config import settings
 from app.modules.contracts.api import router as contracts_router
@@ -114,6 +115,7 @@ app.include_router(invoice_router)
 app.include_router(brs_router)
 app.include_router(contracts_router)
 app.include_router(esign_router)
+app.include_router(ai_router)
 app.include_router(rag_router)
 app.include_router(billing.router)
 app.include_router(identity_api.router)

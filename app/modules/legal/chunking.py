@@ -1,20 +1,21 @@
 """Split legal source text into citable chunks (one per section where the text looks like a bare Act)."""
 import re
 
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 # "27. Agreement in restraint of trade void.-" / "Section 27." / "27A. Heading"
 _SECTION = re.compile(r"^\s*(?:Section\s+)?(\d{1,3}[A-Z]{0,2})\.\s+(\S.*)$", re.M)
 MAX_CHARS = 1800
 
 
-def _windows(text: str, size: int = 900, overlap: int = 150) -> list[str]:
+_splitter = RecursiveCharacterTextSplitter(chunk_size=900, chunk_overlap=150, separators=["\n\n", "\n", ". ", " ", ""])
+
+
+def _windows(text: str) -> list[str]:
     text = re.sub(r"[ \t]+", " ", text).strip()
     if len(text) <= MAX_CHARS:
         return [text] if text else []
-    out, i = [], 0
-    while i < len(text):
-        out.append(text[i:i + size].strip())
-        i += size - overlap
-    return [w for w in out if w]
+    return [w.strip() for w in _splitter.split_text(text) if w.strip()]
 
 
 def chunk(text: str) -> list[dict]:

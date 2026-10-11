@@ -30,3 +30,23 @@ def validate_gstin(gstin: str | None) -> tuple[bool, str]:
 
 def state_code(gstin: str | None) -> str | None:
     return gstin[:2] if gstin and len(gstin) >= 2 and gstin[:2].isdigit() else None
+
+
+# Characters OCR / vision models routinely confuse. Used ONLY to repair a GSTIN that fails its checksum.
+_CONFUSABLE = {"0": "OQD", "O": "0", "Q": "0", "D": "0", "1": "IL", "I": "1", "L": "1", "5": "S", "S": "5",
+               "8": "B", "B": "8", "2": "Z", "Z": "2", "6": "G", "G": "6"}
+
+
+def try_fix_gstin(gstin: str | None) -> str | None:
+    """If `gstin` is invalid but exactly ONE single-character OCR-confusion substitution makes it valid
+    (format + state code + checksum), return that corrected value; otherwise None (never guesses)."""
+    if not gstin or len(gstin) != 15 or validate_gstin(gstin)[0]:
+        return None
+    g = gstin.upper()
+    found = set()
+    for i, ch in enumerate(g):
+        for alt in _CONFUSABLE.get(ch, ""):
+            cand = g[:i] + alt + g[i + 1:]
+            if validate_gstin(cand)[0]:
+                found.add(cand)
+    return found.pop() if len(found) == 1 else None

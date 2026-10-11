@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from app.core import billing, db, storage
 from app.core.auth import Principal, require
 from app.core.uploads import read_limited
-from app.modules.invoices import export, extract, service
+from app.modules.invoices import export, service
 from app.modules.invoices.tasks import process_invoice
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -50,9 +50,7 @@ async def upload(file: UploadFile = File(...), p: Principal = Depends(require("o
 @router.post("/text", status_code=201)
 def from_text(body: TextIn, p: Principal = Depends(require("operator"))):
     billing.consume(p.tenant_id, "invoices")
-    parsed = extract.parse_invoice_text(body.text)
-    inv = {**parsed["fields"], "line_items": parsed["line_items"]}
-    return service.save(p.tenant_id, p.actor, inv, parsed["confidence"], "text")
+    return service.from_text(p.tenant_id, p.actor, body.text, "text")
 
 
 @router.post("", status_code=201)

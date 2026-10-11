@@ -10,15 +10,84 @@ Multi-tenant SaaS for Indian SMBs / CA firms: **invoice automation**, **bank rec
 | Database | PostgreSQL (SQLAlchemy 2 + **Alembic** migrations); SQLite for dev/tests |
 | Jobs | Celery + Redis (OCR/extraction in the worker, mailbox poller via beat) |
 | Files | S3-compatible object storage (MinIO / AWS S3) via boto3, or local disk |
-| OCR / extraction | Docling, PaddleOCR (optional install), pdfplumber for bank-statement PDFs |
+| OCR | Docling, PaddleOCR (optional install), pdfplumber for bank-statement PDFs |
+| LLM orchestration | **LangChain** (chat models, embeddings, splitters) + **LangGraph** (invoice extraction loop, legal-review pipeline) |
+| Default models | **DeepSeek** (`deepseek-chat`) for chat; **Jina** free-tier hosted embeddings (`jina-embeddings-v3`) - both swappable by config |
 | Matching | rapidfuzz |
 | Documents | python-docx, openpyxl, Jinja2 (sandboxed) |
 | Ops | structlog JSON logs, request ids, Prometheus `/metrics`, `/health` + `/ready`, optional Sentry |
 | UI | React + TypeScript + Vite, served by the API from the same origin |
 | SSO | OpenID Connect via Authlib (Keycloak, Authentik, Azure AD, Okta, Google); PKCE; invite-only |
 | E-signature | reportlab (PDF), pyHanko (PDF seal), SMTP one-time codes |
-| Legal RAG | rank-bm25 + optional sentence-transformers (hybrid, RRF); any OpenAI-compatible LLM (Ollama, vLLM, llama.cpp) |
+| Retrieval | rank-bm25 + dense embeddings through the gateway (hybrid, reciprocal-rank fusion), tenant-scoped |
 | Payments | Razorpay (signed webhook -> plan change); quotas enforced per month |
+
+## Architecture
+
+A modular monolith with enforced boundaries (`lint-imports`, run in CI):
+
+```
+app/
+  main.py  worker.py        composition roots: wire modules together, nothing else
+  modules/                  feature modules - independent of each other
+    identity/   SSO (OIDC) + invited users
+    invoices/   OCR text -> LangGraph extraction -> validation -> approval -> CSV/Tally
+    reconciliation/   statement parsing + matching + BRS report
+    contracts/  templates, rule screening, versions, workflow;   public.py = the ONLY API others may call
+    esign/      signing requests, OTP, sealed PDF            (uses contracts.public)
+    legal/      corpus + hybrid retrieval + LangGraph review (uses contracts.public)
+  ai/                       the AI gateway: providers, chat, structured output, embeddings (LangChain)
+  core/                     platform: config, db, auth/RBAC, billing/quotas, storage, jobs, observability
+evals/                      accuracy harnesses (invoices, retrieval) - run these on YOUR data
+```
+
+Rules enforced by import-linter: `main/worker > modules > ai > core`; feature modules may not import each other, except
+`esign` and `legal` calling `contracts.public`. Each module owns its API router, tasks and domain logic; shared tables live
+in `core/db.py` (one Alembic history). To split a module into its own service later, its seams are already the public APIs.
+
+## AI: how it works and how to switch
+
+Feature modules never import a provider SDK. They ask the gateway (`app/ai`) for a model **by task** (`extract`, `review`,
+`verify`). Defaults: DeepSeek chat + Jina embeddings. Switching is configuration only:
+
+```bash
+# DeepSeek (default)                 FINTECH_LLM_PROVIDER=deepseek  FINTECH_LLM_API_KEY=sk-...
+# stronger model just for checks     FINTECH_LLM_TASK_MODELS='{"verify":"deepseek-reasoner"}'
+# OpenAI                             FINTECH_LLM_PROVIDER=openai    FINTECH_LLM_API_KEY=...  FINTECH_LLM_MODEL=gpt-4o-mini
+# Anthropic (pip install '.[anthropic]')  FINTECH_LLM_PROVIDER=anthropic  FINTECH_LLM_API_KEY=...
+# local Ollama / vLLM / OpenRouter   FINTECH_LLM_PROVIDER=openai_compat FINTECH_LLM_BASE_URL=http://ollama:11434/v1 FINTECH_LLM_MODEL=qwen2.5:14b
+# embeddings (free hosted)           FINTECH_EMBEDDING_PROVIDER=jina FINTECH_EMBEDDING_API_KEY=jina_...
+# embeddings (local, pip '.[hf]')    FINTECH_EMBEDDING_PROVIDER=local  FINTECH_EMBEDDING_MODEL=BAAI/bge-m3
+```
+
+`GET /ai/status?probe=true` (admin) shows the active models and does a live round-trip. Every vector is stored with the id of
+the model that made it; dense search only uses vectors from the *current* model, so a switch never mixes incompatible vectors.
+After switching embeddings run `python -m app.modules.legal.ingest --reindex` (until then those chunks are lexical-only).
+No key = LLM features off and everything falls back to the deterministic path. Token usage is metered per tenant.
+
+**Workflows (LangGraph)**
+- *Invoice extraction*: regex baseline -> LLM structured extraction -> deterministic OCR-confusion GSTIN fixer -> validators
+  (arithmetic, GSTIN checksum, CGST/SGST-vs-IGST) -> on failure, feed the exact errors back for up to 2 repairs -> merge with
+  evidence-based confidence (two extractors agree = high; disagree = flagged for review). Models cannot talk their way past
+  the validators, so prompt-injected totals still land in the review queue.
+- *Legal review*: clauses fan out in parallel; each runs retrieve -> analyse (cites passages only) -> ground-check ->
+  **independent verification** (a separate call judges whether the cited quote actually supports the issue) -> finish.
+
+## Measuring accuracy (do this before you sell)
+
+```bash
+python -m evals.make_synthetic --n 60                      # smoke-test set (synthetic; NOT a substitute for real data)
+python -m evals.invoices --mode rules                       # regex baseline
+python -m evals.invoices                                    # with the configured LLM
+python -m evals.invoices --data my_labelled.jsonl           # YOUR invoices: same JSONL schema
+python -m evals.retrieval --data my_queries.jsonl --k 4     # legal retrieval recall@k on the live corpus
+```
+
+Headline metric is the **silent error rate**: invoices with a wrong field that would reach the ledger without human review.
+Baseline measured on the synthetic set, regex only: 53% of invoices fully correct, 77% sent to review, silent error rate 0.0%
+(safe but would overwhelm reviewers; layouts with labels like "Inv. No." or one-line summaries fail entirely). **The LLM path
+has not been measured on real models or real invoices** (the DeepSeek/Jina hosts are not reachable from the build sandbox);
+`tests/test_evals.py` only proves the repair/validation machinery with a scripted noisy fake model.
 
 ## Run it
 
@@ -61,13 +130,19 @@ Limits of the grounding guard: it proves a citation was *retrieved*, not that th
 
 ## Verification status (be aware before launch)
 
-Verified here: 61 automated tests on SQLite and on real PostgreSQL 16 (stable over repeated runs); Alembic up/down/up and `alembic check` on PostgreSQL; a clean-venv install from `pyproject.toml` running the full suite; `ruff` clean; and a live browser run on PostgreSQL + Redis + a Celery worker with **real SSO login (OIDC code+PKCE) -> contract approval -> AI legal review -> two signers signing through emailed links and OTPs (real SMTP to a local sink) -> signed PDF download -> seal verification**.
+Verified here: 88 automated tests on SQLite and on real PostgreSQL 16; Alembic up/down/up and `alembic check`; clean-venv
+install running the full suite; `ruff` and `lint-imports` (3 contracts, including a check that a forbidden import is caught);
+a browser run on PostgreSQL + Redis + Celery of SSO login -> approval -> legal review -> signing -> sealed PDF (previous
+round; re-run the e2e after upgrading the LLM path).
 
 **Not verified** (not possible in this environment):
-- SSO was tested against a minimal in-repo OIDC provider, not Keycloak/Azure/Okta/Google; SMTP against a local sink, not a real mail server.
-- The LLM was a stub, and the corpus a synthetic test fixture: **retrieval quality and legal-analysis quality on real Indian statutes and real LLMs are unmeasured.** Dense embeddings (`sentence-transformers`) were not run (model hosting was unreachable); the code path is tested with a stub embedder.
-- The sealed PDF was validated with pyHanko only, not in Adobe Acrobat; a self-signed/dev seal shows as untrusted there.
-- The Docker image and CI workflow have never been built/run (no Docker daemon); Docling/PaddleOCR, Razorpay (live) and a real IMAP mailbox are likewise untested. Tally XML needs a test import.
+- **Real DeepSeek / Jina / Hugging Face calls.** All LLM and embedding paths were tested against fake OpenAI-compatible
+  servers (request shape, JSON mode, retry, switching, metering). Jina's OpenAI-compatible embeddings route and
+  DeepSeek's JSON mode are used per their docs but unconfirmed here. Run `GET /ai/status?probe=true` with real keys first.
+- **Accuracy of any real model** on invoices or legal text, and retrieval quality on real statutes. No statute text ships
+  with the repo. Use `evals/` on your own labelled data and set your own go/no-go thresholds.
+- SSO against real IdPs, SMTP against a real server, the sealed PDF in Adobe Acrobat, the Docker image and CI workflow,
+  Docling/PaddleOCR, Razorpay (live), a real IMAP mailbox, and Tally import.
 
 ## Known limits / not built
 
